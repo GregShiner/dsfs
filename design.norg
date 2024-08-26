@@ -48,4 +48,12 @@
   |Free Table 0|Superblock|Root Dir Inode|Remaining data and inode blocks|Free Table 1|Remaining data and inode blocks|
 @end
 
+* Inode Creation
+  ~ The allocator searches for an available block
+  ~ Mark block as occupied
+  ~ Create Inode initial metadata
+  ~ Create allocation table
+  ~~ Files: Preallocate 1 data block, mark it as occupied and add it to allocation table
+  ~~ Directories: Add "." and ".." entries to allocation table as described in `Inode Types -> Directories`
+
 vim: ts=2:sw=2
