@@ -6,11 +6,16 @@ use fuser::{
 use libc::ENOENT;
 use std::ffi::OsStr;
 use std::fs::File;
+use std::io::{Seek, SeekFrom};
+use std::os::unix::fs::FileExt;
 use std::time::{Duration, UNIX_EPOCH};
+use thiserror::Error;
 
-const BLOCK_SIZE: i64 = 4096; // 4KiB
-const NUM_BLOCKS: i64 = 1024; // 1024 Blocks = 4.0MiB ~= 4.2MB
-const BLOCKS_IN_GROUP: i64 = BLOCK_SIZE * 8; // Number of blocks in a group. This is limited by the
+type BlockIndex = u32;
+
+const BLOCK_SIZE: u32 = 4096; // 4KiB
+const NUM_BLOCKS: u32 = 1024; // 1024 Blocks = 4.0MiB ~= 4.2MB
+const BLOCKS_IN_GROUP: u32 = BLOCK_SIZE * 8; // Number of blocks in a group. This is limited by the
                                              // number of bits in a free table, which is a single full block
 
 const TTL: Duration = Duration::from_secs(1); // 1 second
@@ -56,10 +61,60 @@ const HELLO_TXT_ATTR: FileAttr = FileAttr {
 struct Dsfs {
     block_file: File,
     mount_point: String,
+    block_size: u32,
+    num_blocks: u32,
+    blocks_in_group: u32,
 }
 
 struct free_table {
     table: [u8; BLOCKS_IN_GROUP as usize / 8],
+}
+
+#[derive(Error, Debug)]
+enum FreeTableError {
+    #[error("The bit index is out of bounds. Bit index provided: {0}, Max bit index: {1}")]
+    OutOfBounds(u32, u32),
+}
+
+impl free_table {
+    fn from_fs(block_file: &mut File, block_group: u32) -> Self {
+        let block_index = match block_group {
+            0 => 1,
+            _ => BLOCKS_IN_GROUP * block_group,
+        };
+        let mut table = [0 as u8; BLOCKS_IN_GROUP as usize / 8];
+        block_file
+            .read_exact_at(&mut table, (block_index * BLOCK_SIZE).into())
+            .unwrap();
+        free_table { table }
+    }
+
+    // Creates a new free table, writes it to the disk, and returns it
+    fn create_and_init(block_file: &mut File, block_group: u32) -> Self {
+        let block_index = match block_group {
+            0 => 1,
+            _ => BLOCKS_IN_GROUP * block_group,
+        };
+        let mut table = [0 as u8; BLOCKS_IN_GROUP as usize / 8];
+        block_file
+            .read_exact_at(&mut table, (block_index * BLOCK_SIZE).into())
+            .unwrap();
+        free_table { table }
+    }
+
+    fn set_bit(
+        &mut self,
+        block_file: &mut File,
+        bit_index: u32,
+        fs: &Dsfs,
+    ) -> Result<(), FreeTableError> {
+        // TODO: Check this condition (maybe off by 1)
+        if bit_index >= fs.blocks_in_group {
+            return Err(FreeTableError::OutOfBounds(bit_index, fs.blocks_in_group));
+        }
+        todo!();
+        Ok(())
+    }
 }
 
 impl Filesystem for Dsfs {
@@ -186,6 +241,9 @@ fn main() {
     let hello_fs = Dsfs {
         block_file: File::open(fs_filename).unwrap(),
         mount_point: mount_point.to_string(),
+        block_size: BLOCK_SIZE,
+        num_blocks: NUM_BLOCKS,
+        blocks_in_group: BLOCKS_IN_GROUP,
     };
     fuser::mount2(hello_fs, mount_point, &options).unwrap();
 }
