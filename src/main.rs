@@ -5,10 +5,13 @@ use fuser::{
 };
 use libc::ENOENT;
 use std::ffi::OsStr;
+use std::fs::File;
 use std::time::{Duration, UNIX_EPOCH};
 
-const BLOCK_SIZE: i64 = 4000; // 4KB
+const BLOCK_SIZE: i64 = 4096; // 4KiB
 const NUM_BLOCKS: i64 = 1024; // 1024 Blocks = 4.0MiB ~= 4.2MB
+const BLOCKS_IN_GROUP: i64 = BLOCK_SIZE * 8; // Number of blocks in a group. This is limited by the
+                                             // number of bits in a free table, which is a single full block
 
 const TTL: Duration = Duration::from_secs(1); // 1 second
 
@@ -50,9 +53,24 @@ const HELLO_TXT_ATTR: FileAttr = FileAttr {
     blksize: 512,
 };
 
-struct HelloFS;
+struct Dsfs {
+    block_file: File,
+    mount_point: String,
+}
 
-impl Filesystem for HelloFS {
+struct free_table {
+    table: [u8; BLOCKS_IN_GROUP as usize / 8],
+}
+
+impl Filesystem for Dsfs {
+    fn init(
+        &mut self,
+        _req: &Request<'_>,
+        _config: &mut fuser::KernelConfig,
+    ) -> Result<(), libc::c_int> {
+        println!("Successfully Mounted");
+        Ok(())
+    }
     fn lookup(&mut self, _req: &Request, parent: u64, name: &OsStr, reply: ReplyEntry) {
         if parent == 1 && name.to_str() == Some("hello.txt") {
             reply.entry(&TTL, &HELLO_TXT_ATTR, 0);
@@ -155,7 +173,7 @@ fn main() {
         )
         .get_matches();
     env_logger::init();
-    let mountpoint = matches.get_one::<String>("MOUNT_POINT").unwrap();
+    let mount_point = matches.get_one::<String>("MOUNT_POINT").unwrap();
     let fs_filename = matches.get_one::<String>("DEVICE_FILE").unwrap();
     let mut options = vec![MountOption::RW, MountOption::FSName("dsfs".to_string())];
     if matches.get_flag("no-auto-unmount") {
@@ -164,7 +182,10 @@ fn main() {
     if matches.get_flag("allow-root") {
         options.push(MountOption::AllowRoot);
     }
-    println!("Mounting {} on {}", fs_filename, mountpoint);
-    let hello_fs = HelloFS {};
-    fuser::mount2(hello_fs, mountpoint, &options).unwrap();
+    println!("Mounting {} on {}", fs_filename, mount_point);
+    let hello_fs = Dsfs {
+        block_file: File::open(fs_filename).unwrap(),
+        mount_point: mount_point.to_string(),
+    };
+    fuser::mount2(hello_fs, mount_point, &options).unwrap();
 }

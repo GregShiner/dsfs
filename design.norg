@@ -1,12 +1,13 @@
 * Blocks
   - Currently BLOCK_SIZE is 4KiB but there should really be no reason this can't be variable
   - Each block is indexed by a u32
-  - Blocks are 0-indexed
   - This implies that a filesystem cannot contain more than 2^32 blocks
+  - Blocks are 0-indexed
 
 * Superblock
   - The super block contains metadata about the fs itself
   - It is always stored at block 1 (immediately after the group 0 free table)
+  - First 4 bytes are the block size (currently this is hard coded in the driver)
 
 * Groups
   - A group of blocks is a contiguous and aligned region of 8 * BLOCK_SIZE blocks (the number of bits in a single block)
@@ -14,10 +15,14 @@
 * Free Table
   - Free and used blocks are denoted by a free table in the first block of a group
   - The free table occupies the entire first block in a group (hence why the number of blocks in a group is the number of bits in a block)
+  - In the case of the first group, the first block is the superblock, and the second block is the free table
   - Each bit in the free table is 1 if the block is occupied, and 0 if free
-  - The first bit in a free table is always 1 because it itself is in an occupied block
-  - The second bit in the first free table is always 1, because the superblock is refered to by the second bit
-  - The third bit in the first free table is always 1, because there must be a root directory
+  - The first bit in a free table is always 1 because it itself is in an occupied block (unless it is the first free table)
+  - First free table
+    - First 3 bits are set
+    ~ Superblock
+    ~ Free table 0
+    ~ Root dir inode
   - If the size of an fs is not exactly a multiple of GROUP_SIZE, the block addresses that are invalid at the end of the last group are marked as occupied
 
 * Inodes
@@ -44,8 +49,8 @@
   This example assumes a 4KiB block size and a fs size of 256MiB (65536 Blocks)
 @code
   |Group 0                                                               |Group 1                                     |
-  |Block 0     |Block 1   |Block 2       |Blocks 3-32767                 |Block 32768 |Blocks 32768-65535             |
-  |Free Table 0|Superblock|Root Dir Inode|Remaining data and inode blocks|Free Table 1|Remaining data and inode blocks|
+  |Block 0   |Block 1     |Block 2       |Blocks 3-32767                 |Block 32768 |Blocks 32768-65535             |
+  |Superblock|Free Table 0|Root Dir Inode|Remaining data and inode blocks|Free Table 1|Remaining data and inode blocks|
 @end
 
 * Inode Creation
