@@ -62,7 +62,7 @@ The types of a block are defined by an enum called BlockType. It has the followi
     - This can also be done recursively with other redirection tables
     - Only when an address table is full, check each block against the block table to see if its a data block or redirection table (prob a more efficient way to do this)
 
-## Inode Metadata
+## Inode Contents
   - u32: Parent directory inode address (root directory's parent is itself)
   - \[u8; 255\]: ASCII encoded filename. Cannot include NULL or '/'
   - u64: Filesize (holy shit this implies an absolutely bat shit insane max filesize)
