@@ -24,8 +24,8 @@
   - First free table
     - First 3 bits are set
     1. Superblock
-    1. Free table 0
-    1. Root dir inode
+    2. Free table 0
+    3. Root dir inode
   - If the size of an fs is not exactly a multiple of GROUP_SIZE, the block addresses that are invalid at the end of the last group are marked as occupied
 
 * Inodes
