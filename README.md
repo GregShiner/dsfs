@@ -51,7 +51,6 @@
 * FS Block Table
   This example assumes a 4KiB block size and a fs size of 256MiB (65536 Blocks)
   |Group 0                                                               |Group 1                                     |
-  |----------------------------------------------------------------------|--------------------------------------------|
   |Block 0   |Block 1     |Block 2       |Blocks 3-32767                 |Block 32768 |Blocks 32768-65535             |
   |Superblock|Free Table 0|Root Dir Inode|Remaining data and inode blocks|Free Table 1|Remaining data and inode blocks|
 
