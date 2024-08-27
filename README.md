@@ -68,7 +68,7 @@ The types of a block are defined by an enum called BlockType. It has the followi
   - u64: Filesize (holy shit this implies an absolutely bat shit insane max filesize)
   - u16: File Mode (lower 12 bits are POSIX permissions bits, upper 4 are POSIX file types)
   - Much more to be added to meet POSIX standards
-  - \[u32; <remaining space>\]: Allocation table, contains list of block addresses
+  - \[u32; \<remaining space\>\]: Allocation table, contains list of block addresses
 
 ## Inode Types
   - Currently only Directories and Files. Sym Links will be added later
