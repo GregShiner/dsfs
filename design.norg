@@ -7,7 +7,10 @@
 * Superblock
   - The super block contains metadata about the fs itself
   - It is always stored at block 1 (immediately after the group 0 free table)
-  - First 4 bytes are the block size (currently this is hard coded in the driver)
+  - Layout
+  -- u32: BLOCK_SIZE
+  -- u32: NUM_BLOCKS
+  -- u32: BLOCKS_IN_GROUP
 
 * Groups
   - A group of blocks is a contiguous and aligned region of 8 * BLOCK_SIZE blocks (the number of bits in a single block)
