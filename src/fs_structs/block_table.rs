@@ -18,17 +18,28 @@ pub enum BlockTableError {
     TypeCastError(&'static str, &'static str),
 }
 
+#[repr(u8)]
+enum BlockType {
+    Free = 0x0,
+    SuperBlock = 0x1,
+    BlockTable = 0x2,
+    Inode = 0x3,
+    Data = 0x4,
+    Error = 0x5,
+    IndirectionTable = 0x6,
+}
+
 impl BlockTable {
     // Creates a new free table, writes it to the disk, and returns it
     fn create_and_init(
         block_file: &mut File,
         group_index: GroupIndex,
     ) -> Result<Self, BlockTableError> {
-        let table: Vec<u8> = [0 as u8; BLOCKS_IN_GROUP as usize / 8].into();
+        let table: Vec<u8> = [0 as u8; BLOCKS_IN_GROUP as usize].into();
         // TODO: Set initial bytes
-        let free_table = BlockTable { table, group_index };
-        match free_table.update_file(block_file) {
-            Ok(_) => Ok(free_table),
+        let block_table = BlockTable { table, group_index };
+        match block_table.update_file(block_file) {
+            Ok(_) => Ok(block_table),
             Err(err) => Err(err),
         }
     }
@@ -38,10 +49,10 @@ impl BlockTable {
         block_file: &mut File,
         group_index: GroupIndex,
     ) -> Result<BlockTable, BlockTableError> {
-        let table: Vec<u8> = [0 as u8; BLOCKS_IN_GROUP as usize / 8].into();
-        let mut free_table = BlockTable { table, group_index };
-        match free_table.update_table(block_file) {
-            Ok(_) => Ok(free_table),
+        let table: Vec<u8> = [0 as u8; BLOCKS_IN_GROUP as usize].into();
+        let mut block_table = BlockTable { table, group_index };
+        match block_table.update_table(block_file) {
+            Ok(_) => Ok(block_table),
             Err(err) => Err(err),
         }
     }
@@ -70,12 +81,11 @@ impl BlockTable {
 
     fn set_bit(
         &mut self,
-        block_file: &mut File,
-        bit_index: u32, // This is the index of the bit inside the current free table. This is NOT
+        block_in_group_index: u32, // This is the index of the byte inside the current block table. This is NOT
         // the same as the block index. It will be block_index % BLOCKS_IN_GROUP b/c it is the
         // index of the block within a group
         fs: &Dsfs,
-        value: bool,
+        value: BlockType,
     ) -> Result<(), BlockTableError> {
         // TODO: Check this condition (maybe off by 1)
         if bit_index >= fs.blocks_in_group {
