@@ -1,7 +1,7 @@
-use std::{fs::File, os::unix::fs::FileExt};
+use std::os::unix::fs::FileExt;
 use thiserror::Error;
 
-use crate::{dsfs::Dsfs, GroupIndex, BLOCKS_IN_GROUP, BLOCK_SIZE};
+use crate::{dsfs::Dsfs, GroupIndex};
 
 pub struct BlockTable {
     table: Vec<BlockType>,
@@ -18,6 +18,8 @@ pub enum BlockTableError {
     TypeCastError(&'static str, &'static str),
 }
 
+// NOTE: EXTREMELY IMPORTANT!!!! Do not change this type without ensuring that TryFrom<u8> for
+// BlockType is updated!! Not updating this trait impl can and will lead to UB
 #[repr(u8)]
 #[derive(Copy, Clone)]
 enum BlockType {
@@ -30,21 +32,44 @@ enum BlockType {
     IndirectionTable = 0x6,
 }
 
-impl Into<u8> for BlockType {
-    fn into(self) -> u8 {
-        self as u8
+impl TryFrom<u8> for BlockType {
+    type Error = ();
+
+    fn try_from(byte: u8) -> Result<Self, <BlockType as TryFrom<u8>>::Error> {
+        if byte > 0x6 {
+            Err(())
+        } else {
+            // This should be safe because the byte is checked to be defined by the enum by the if
+            // statement. BlockType uses the same representation as a u8 as well.
+            Ok(unsafe { std::mem::transmute(byte) })
+        }
     }
 }
 
 impl BlockTable {
+    // There HAS to be a better way to do this
+    fn table_as_bytes(&self) -> Vec<u8> {
+        self.table.iter().map(|&e| e as u8).collect()
+    }
+
+    fn table_from_bytes(
+        bytes: Vec<u8>,
+    ) -> Result<Vec<BlockType>, <BlockType as TryFrom<u8>>::Error> {
+        bytes
+            .iter()
+            .map(|&e| e.try_into().or_else(|_| Err(())))
+            .collect()
+    }
     // Creates a new block table, writes it to the disk, and returns it
     fn create_and_init(
-        block_file: &mut File,
+        dsfs: &Dsfs,
+        // block_file: &mut File,
         group_index: GroupIndex,
-        blocks_in_group: u32,
+        // blocks_in_group: u32,
     ) -> Result<Self, BlockTableError> {
         // Creates an array of
-        let mut table: Vec<BlockType> = vec![BlockType::Free; blocks_in_group.try_into().unwrap()];
+        let mut table: Vec<BlockType> =
+            vec![BlockType::Free; dsfs.blocks_in_group.try_into().unwrap()];
         // If the first group, the first block is the superblock and the second is the block table.
         // Else, the first block is the block table.
         match group_index {
@@ -57,7 +82,7 @@ impl BlockTable {
             }
         };
         let block_table = BlockTable { table, group_index };
-        match block_table.write_table(block_file) {
+        match block_table.write_table(dsfs) {
             Ok(_) => Ok(block_table),
             Err(err) => Err(err),
         }
@@ -65,39 +90,36 @@ impl BlockTable {
 
     // Creates a BlockTable from an existing ft on the fs
     pub fn from_fs(
-        block_file: &mut File,
+        dsfs: &Dsfs,
+        // block_file: &mut File,
         group_index: GroupIndex,
-        blocks_in_group: u32,
+        // blocks_in_group: u32,
     ) -> Result<BlockTable, BlockTableError> {
-        let table: Vec<BlockType> = vec![BlockType::Free; blocks_in_group.try_into().unwrap()];
+        let table: Vec<BlockType> = vec![BlockType::Free; dsfs.blocks_in_group.try_into().unwrap()];
         let mut block_table = BlockTable { table, group_index };
-        match block_table.read_table(block_file) {
+        match block_table.read_table(dsfs) {
             Ok(_) => Ok(block_table),
             Err(err) => Err(err),
         }
     }
 
-    /*
-    let blocks_in_group: u32 = 4;
-    let table: Vec<BlockType> = vec![BlockType::BlockTable; blocks_in_group.try_into().unwrap()];
-    println!("{table:?}");
-    let writeable: Vec<u8> = unsafe {
-        std::mem::transmute::<&[BlockType], &[u8]>(table.as_slice())
-    }.into();
-    let mut arr: Arc<[i32]> = Arc::new([1, 2, 3]);
-    arr[1] = 5;
-    println!("{arr:?}");
-    println!("{writeable:?}");
-    */
     // Writes table state from memory to disk
-    fn write_table(&self, block_file: &mut File) -> Result<(), BlockTableError> {
+    fn write_table(
+        &self,
+        dsfs: &Dsfs,
+        // block_file: &mut File,
+        // super_block: SuperBlock,
+    ) -> Result<(), BlockTableError> {
         let block_index = match self.group_index {
             0 => 1,
-            _ => BLOCKS_IN_GROUP * self.group_index,
+            // block_size is being used here to get the blocks in a group
+            // Multiplying the blocks in a group with the group index gets the block index of the
+            // groups block table.
+            _ => dsfs.block_size * self.group_index,
         };
-        match block_file.write_all_at(
-            self.table.into::<Vec<u8>>().into(),
-            (block_index * BLOCK_SIZE).into(),
+        match dsfs.block_file.write_all_at(
+            self.table_as_bytes().as_slice(),
+            (block_index * dsfs.block_size).into(),
         ) {
             Ok(_) => Ok(()),
             Err(_) => Err(BlockTableError::FileError),
@@ -105,13 +127,25 @@ impl BlockTable {
     }
 
     // Reads table state from disk to memory
-    fn read_table(&mut self, block_file: &File) -> Result<(), BlockTableError> {
+    fn read_table(
+        &mut self,
+        dsfs: &Dsfs,
+        // block_file: &File,
+        // blocks_in_group: u32,
+    ) -> Result<(), BlockTableError> {
         let block_index = match self.group_index {
             0 => 1,
-            _ => BLOCKS_IN_GROUP * self.group_index,
+            _ => dsfs.blocks_in_group * self.group_index,
         };
-        match block_file.read_exact_at(&mut self.table, (block_index * BLOCK_SIZE).into()) {
-            Ok(_) => Ok(()),
+        let mut table: Vec<u8> = vec![0; dsfs.blocks_in_group.try_into().unwrap()];
+        match dsfs
+            .block_file
+            .read_exact_at(&mut table, (block_index * dsfs.block_size).into())
+        {
+            Ok(_) => {
+                self.table = Self::table_from_bytes(table).unwrap();
+                Ok(())
+            }
             Err(_) => Err(BlockTableError::FileError),
         }
     }
@@ -134,7 +168,7 @@ impl BlockTable {
                 fs.blocks_in_group,
             ));
         }
-        self.table[block_in_group_index] = value;
+        self.table[block_in_group_index as usize] = value;
         Ok(())
     }
 
@@ -144,9 +178,8 @@ impl BlockTable {
     fn get_type(
         &mut self,
         block_in_group_index: u32, // Ditto
-        block_file: &mut File,
         fs: &Dsfs,
-    ) -> Result<bool, BlockTableError> {
+    ) -> Result<BlockType, BlockTableError> {
         // TODO: Check this condition (maybe off by 1)
         if block_in_group_index >= fs.blocks_in_group {
             return Err(BlockTableError::OutOfBounds(
@@ -154,6 +187,6 @@ impl BlockTable {
                 fs.blocks_in_group,
             ));
         }
-        Ok(self.table[block_in_group_index])
+        Ok(self.table[block_in_group_index as usize])
     }
 }

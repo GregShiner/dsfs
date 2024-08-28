@@ -11,14 +11,14 @@ use std::path::PathBuf;
 type BlockIndex = u32;
 type GroupIndex = u32;
 
-const BLOCK_SIZE: u32 = 4096; // 4KiB
-const NUM_BLOCKS: u32 = 1024; // 1024 Blocks = 4.0MiB ~= 4.2MB
+// const BLOCK_SIZE: u32 = 4096; // 4KiB
+// const NUM_BLOCKS: u32 = 1024; // 1024 Blocks = 4.0MiB ~= 4.2MB
 
 // const BLOCKS_IN_GROUP: u32 = BLOCK_SIZE * 8; // Number of blocks in a group. This is limited by the
 //                                              // number of bits in a free table, which is a single full block
 
 // Reworked block tables (previously free tables) to use a u8 for each block
-const BLOCKS_IN_GROUP: u32 = BLOCK_SIZE;
+// const BLOCKS_IN_GROUP: u32 = BLOCK_SIZE;
 
 fn main() {
     let matches = Command::new("dsfs")

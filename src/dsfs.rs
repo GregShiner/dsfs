@@ -5,11 +5,12 @@ use thiserror::Error;
 use crate::fs_structs::{block_table::BlockTable, super_block::SuperBlock};
 
 pub struct Dsfs {
-    block_file: File,
+    pub block_file: File,
     mount_point: PathBuf,
-    pub super_block: SuperBlock,
+    pub block_size: u32,
+    pub num_blocks: u32,
     pub blocks_in_group: u32,
-    free_tables: Vec<BlockTable>,
+    block_table: Vec<BlockTable>,
 }
 
 #[derive(Error, Debug)]
@@ -21,18 +22,14 @@ impl Dsfs {
         // Read superblock information
         let block_file = File::open(file_name).unwrap();
 
-        let mut block_size_buf = [0 as u8; 4];
-        let _ = block_file.read_exact_at(&mut block_size_buf, 0)?;
-        // TODO: Check that this should not be u32::from_le_bytes() (im pretty sure this is right)
-        let block_size = u32::from_be_bytes(block_size_buf);
-
-        let mut num_blocks_buf = [0 as u8; 4];
-        let _ = block_file.read_exact_at(&mut num_blocks_buf, 4)?;
-        let num_blocks = u32::from_be_bytes(num_blocks_buf);
-
         let mut blocks_in_group_buf = [0 as u8; 4];
         let _ = block_file.read_exact_at(&mut blocks_in_group_buf, 8)?;
         let blocks_in_group = u32::from_be_bytes(blocks_in_group_buf);
+
+        let SuperBlock {
+            block_size,
+            num_blocks,
+        } = SuperBlock::new(&block_file).unwrap();
 
         // Number of groups is ceil(num_blocks/blocks_in_group)
         let num_groups = num_blocks.div_ceil(blocks_in_group);
@@ -42,12 +39,12 @@ impl Dsfs {
             block_size,
             num_blocks,
             blocks_in_group,
-            free_tables: vec![],
+            block_table: vec![],
         };
         // For all groups, load a free table
         for group_index in 0..num_groups {
-            dsfs.free_tables
-                .push(BlockTable::from_fs(&mut dsfs.block_file, group_index).unwrap())
+            dsfs.block_table
+                .push(BlockTable::from_fs(&dsfs, group_index).unwrap())
         }
         Ok(dsfs)
     }
