@@ -6,8 +6,15 @@ pub struct SuperBlock {
 }
 
 impl SuperBlock {
-    // Loads an existing filesystem from a block file
-    pub fn new(block_file: &File) -> std::io::Result<Self> {
+    pub fn new(block_size: u32, num_blocks: u32) -> Self {
+        SuperBlock {
+            block_size,
+            num_blocks,
+        }
+    }
+
+    /// Loads an existing filesystem from a block file
+    pub fn read(block_file: &File) -> std::io::Result<Self> {
         let mut block_size_buf = [0 as u8; 4];
         let _ = block_file.read_exact_at(&mut block_size_buf, 0)?;
         // TODO: Check that this should not be u32::from_le_bytes() (im pretty sure this is right)
