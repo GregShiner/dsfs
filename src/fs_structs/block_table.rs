@@ -20,60 +20,70 @@ pub enum BlockTableError {
     InvalidBlockType(u8),
 }
 
+type BlockType = u8;
+
+const BT_FREE: BlockType = 0x0;
+const BT_SUPER_BLOCK: BlockType = 0x1;
+const BT_BLOCK_TABLE: BlockType = 0x2;
+const BT_INODE: BlockType = 0x3;
+const BT_DATA: BlockType = 0x4;
+const BT_ERROR: BlockType = 0x5;
+const BT_INDIRECTION_TABLE: BlockType = 0x6;
+
 // NOTE: EXTREMELY IMPORTANT!!!! Do not change this type without ensuring that TryFrom<u8> for
 // BlockType is updated!! Not updating this trait impl can and will lead to UB
-#[repr(u8)]
-#[derive(Copy, Clone)]
-enum BlockType {
-    Free = 0x0,
-    SuperBlock = 0x1,
-    BlockTable = 0x2,
-    Inode = 0x3,
-    Data = 0x4,
-    Error = 0x5,
-    IndirectionTable = 0x6,
-}
+// #[repr(u8)]
+// #[derive(Copy, Clone)]
+// enum BlockType {
+//     Free = 0x0,
+//     SuperBlock = 0x1,
+//     BlockTable = 0x2,
+//     Inode = 0x3,
+//     Data = 0x4,
+//     Error = 0x5,
+//     IndirectionTable = 0x6,
+// }
 
-impl TryFrom<u8> for BlockType {
-    type Error = BlockTableError;
-
-    fn try_from(byte: u8) -> Result<Self, <BlockType as TryFrom<u8>>::Error> {
-        if byte > 0x6 {
-            Err(BlockTableError::InvalidBlockType(byte))
-        } else {
-            // This should be safe because the byte is checked to be defined by the enum by the if
-            // statement. BlockType uses the same representation as a u8 as well.
-            Ok(unsafe { std::mem::transmute(byte) })
-        }
-    }
-}
+// impl TryFrom<u8> for BlockType {
+//     type Error = BlockTableError;
+//
+//     fn try_from(byte: u8) -> Result<Self, <BlockType as TryFrom<u8>>::Error> {
+//         if byte > 0x6 {
+//             Err(BlockTableError::InvalidBlockType(byte))
+//         } else {
+//             // This should be safe because the byte is checked to be defined by the enum by the if
+//             // statement. BlockType uses the same representation as a u8 as well.
+//             Ok(unsafe { std::mem::transmute(byte) })
+//         }
+//     }
+// }
 
 impl BlockTable {
     /// There HAS to be a better way to do this
     /// Returns the table as a vector of bytes
-    fn table_as_bytes(&self) -> Vec<u8> {
-        self.table.iter().map(|&e| e as u8).collect()
-    }
+    // fn table_as_bytes(&self) -> Vec<u8> {
+    //     self.table.iter().map(|&e| e as u8).collect()
+    // }
 
     /// Converts a vector of bytes from the block table to a vector of block types
     /// Errors if a byte read does not fit a BlockType variant
-    fn table_from_bytes(bytes: Vec<u8>) -> Result<Vec<BlockType>, BlockTableError> {
-        // Loops through the bytes and casts each one to a BlockType
-        bytes
-            .iter()
-            .map(|&e| {
-                e.try_into()
-                    // If it fails to convert, propogates the error
-                    .or_else(|_| Err(BlockTableError::InvalidBlockType(e)))
-            })
-            .collect()
-    }
+    // fn table_from_bytes(bytes: Vec<u8>) -> Result<Vec<BlockType>, BlockTableError> {
+    //     // Loops through the bytes and casts each one to a BlockType
+    //     bytes
+    //         .iter()
+    //         .map(|&e| {
+    //             e.try_into()
+    //                 // If it fails to convert, propogates the error
+    //                 .or_else(|_| Err(BlockTableError::InvalidBlockType(e)))
+    //         })
+    //         .collect()
+    // }
 
     /// Initializes a new vector of BlockType::Free
     #[inline]
     fn new_table(size: u32) -> Result<Vec<BlockType>, BlockTableError> {
         Ok(vec![
-            BlockType::Free;
+            BT_FREE;
             // This ugly ass block converts the dsfs.blocks_in_group which is a u32 to a usize and
             // errors if you cant
             size.try_into().or_else(|_| Err(
@@ -92,11 +102,11 @@ impl BlockTable {
         // Else, the first block is the block table.
         match group_index {
             0 => {
-                table[0] = BlockType::SuperBlock;
-                table[1] = BlockType::BlockTable;
+                table[0] = BT_SUPER_BLOCK;
+                table[1] = BT_BLOCK_TABLE;
             }
             _ => {
-                table[0] = BlockType::BlockTable;
+                table[0] = BT_BLOCK_TABLE;
             }
         };
         // Construct the block table
@@ -128,7 +138,7 @@ impl BlockTable {
             _ => dsfs.block_size * self.group_index,
         };
         match dsfs.block_file.write_all_at(
-            self.table_as_bytes().as_slice(),
+            self.table.as_slice(),
             (block_index * dsfs.block_size).into(),
         ) {
             Ok(_) => Ok(()),
@@ -142,23 +152,11 @@ impl BlockTable {
             0 => 1,
             _ => dsfs.blocks_in_group * self.group_index,
         };
-        let mut table: Vec<u8> = vec![
-            0;
-            dsfs.blocks_in_group.try_into().or_else(|_| Err(
-                BlockTableError::TypeCastError(
-                    std::any::type_name_of_val(&dsfs.blocks_in_group),
-                    std::any::type_name::<usize>()
-                )
-            ))?
-        ];
         match dsfs
             .block_file
-            .read_exact_at(&mut table, (block_index * dsfs.block_size).into())
+            .read_exact_at(&mut self.table, (block_index * dsfs.block_size).into())
         {
-            Ok(_) => {
-                self.table = Self::table_from_bytes(table)?;
-                Ok(())
-            }
+            Ok(_) => Ok(()),
             Err(_) => Err(BlockTableError::FileError),
         }
     }
