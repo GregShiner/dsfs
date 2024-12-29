@@ -74,15 +74,15 @@ The types of a block are defined by an enum called BlockType. It has the followi
   - Currently only Directories and Files. Sym Links will be added later
   - Directories
     - The address table contains the addresses of the inodes of its children
-    - This includes a self-referential address with the name "." whose address is the block the current inode is in
-    - It also includes a child with the name ".." which refers to the parent directory's inode
+    - This includes a self-referential address with the name "." whose address is the block the current inode is in (May be removed in favor of making this a virtual entry just handled by driver logic)
+    - It also includes a child with the name ".." which refers to the parent directory's inode (ditto)
     - Hard links are created by creating a an entry in the allocation table with the targets inode
       - It is important to increment the reference count in the targets inode metadata
   - Files
     - The address table contains the addresses of all of the blocks that contain the data of the file
     - The order of the addresses determines the order that the data is in
   - Sym Links
-    - Simply has its target inode address as the first and only entry of the address table
+    - Simply has its target path as the first and only entry of the address table
 
 ## Root
   - The root directory is always inode 0 and its inode is stored at block 2 (blocks are 0-indexed) after the superblock and free table 0
