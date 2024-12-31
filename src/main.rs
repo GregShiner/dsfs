@@ -1,26 +1,18 @@
 mod dsfs;
-mod example_impl;
+// mod example_impl;
 mod fs_structs;
 
 use crate::dsfs::Dsfs;
 
-use clap::{crate_version, Arg, ArgAction, Command};
+use clap::{crate_version, value_parser, Arg, ArgAction, Command};
+use dsfs::DsfsError;
 use fuser::MountOption;
 use std::path::PathBuf;
 
 type BlockIndex = u32;
 type GroupIndex = u32;
 
-// const BLOCK_SIZE: u32 = 4096; // 4KiB
-// const NUM_BLOCKS: u32 = 1024; // 1024 Blocks = 4.0MiB ~= 4.2MB
-
-// const BLOCKS_IN_GROUP: u32 = BLOCK_SIZE * 8; // Number of blocks in a group. This is limited by the
-//                                              // number of bits in a free table, which is a single full block
-
-// Reworked block tables (previously free tables) to use a u8 for each block
-// const BLOCKS_IN_GROUP: u32 = BLOCK_SIZE;
-
-fn main() {
+fn main() -> Result<(), DsfsError> {
     let matches = Command::new("dsfs")
         .version(crate_version!())
         .author("Gregory Shiner")
@@ -29,21 +21,29 @@ fn main() {
                 .required(false)
                 .index(1)
                 .help("Act as a client, and mount FUSE at given path")
-                .default_value("./mnt"),
+                .default_value("./mnt")
+                .value_parser(value_parser!(PathBuf)),
         )
         .arg(
             Arg::new("DEVICE_FILE")
                 .required(false)
                 .index(2)
                 .help("Mount a dsfs filesystem stored in a specific block device file")
-                .default_value("dsfs.img"),
+                .default_value("dsfs.img")
+                .value_parser(value_parser!(PathBuf)),
         )
         .arg(
-            Arg::new("create_fs")
-                .required(false)
+            Arg::new("create-fs")
                 .short('c')
                 .long("create-fs")
-                .help("initializes a new filesystem at the given device file"),
+                .value_name("block_size")
+                .value_parser(value_parser!(u32).range(1..))
+                .num_args(0..=1)
+                .require_equals(false)
+                .default_missing_value("4")
+                .help(
+                    "initializes a new filesystem at the given device file. Block size is in KiB",
+                ),
         )
         .arg(
             Arg::new("no-auto-unmount")
@@ -68,7 +68,19 @@ fn main() {
     if matches.get_flag("allow-root") {
         options.push(MountOption::AllowRoot);
     }
-    // println!("Mounting {} on {}", fs_filename.into(), mount_point.into());
-    let dsfs = Dsfs::new(fs_filename.clone(), mount_point.clone()).unwrap();
-    fuser::mount2(dsfs, mount_point, &options).unwrap();
+    println!(
+        "Mounting {:?} on {:?}",
+        fs_filename.clone(),
+        mount_point.clone()
+    );
+    let dsfs = match matches.get_one::<u32>("create-fs") {
+        Some(block_size) => {
+            Dsfs::create_and_write(fs_filename.clone(), mount_point.clone(), *block_size * 1024)
+                .unwrap()
+        }
+        None => Dsfs::load(fs_filename.clone(), mount_point.clone())?,
+    };
+    println!("{:?}", dsfs);
+    fuser::mount2(dsfs, mount_point, &options)?;
+    Ok(())
 }

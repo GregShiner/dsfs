@@ -10,7 +10,7 @@
   - The super block contains metadata about the fs itself
   - It is always stored at block 0, the very first block
   - It is used to tell the driver important information about the fs
-  - Since the driver has no way to know what the block size is before loading the fs, puttin the block size in the first block means that the driver does not need to know the block size ahead of time to find it.
+  - Since the driver has no way to know what the block size is before loading the fs, putting the block size in the first block means that the driver does not need to know the block size ahead of time to find it.
   - Layout
     - 1024 Byte Padding (see [ext4 docs](https://ext4.wiki.kernel.org/index.php/Ext4_Disk_Layout#Layout))
     - u32: BLOCK_SIZE

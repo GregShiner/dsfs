@@ -1,93 +1,86 @@
-use std::{error, fs::File, os::unix::fs::FileExt, path::PathBuf};
+use std::{
+    fs::{File, OpenOptions},
+    path::PathBuf,
+};
 
+use fuser::Filesystem;
 use thiserror::Error;
 
 use crate::fs_structs::{
     block_table::{BlockTable, BlockTableError},
-    super_block::SuperBlock,
+    super_block::{SuperBlock, SuperBlockError},
 };
 
+#[derive(Debug)]
 pub struct Dsfs {
     pub block_file: File,
     mount_point: PathBuf,
-    pub block_size: u32,
-    pub num_blocks: u32,
+    pub super_block: SuperBlock,
     /// Always equal to block_size because it is limited by the number of entries in a block table
     pub blocks_in_group: u32,
-    block_table: Vec<BlockTable>,
+    block_tables: Vec<BlockTable>,
 }
 
 #[derive(Error, Debug)]
-enum DsfsError {
-    #[error("File IO Error")]
-    IoError(#[from] std::io::Error),
+pub enum DsfsError {
+    #[error("File IO Error: {0}")]
+    Io(#[from] std::io::Error),
     #[error("Block Table Error: {0}")]
-    BlockTableError(#[from] BlockTableError),
+    BlockTable(#[from] BlockTableError),
+    #[error("Super Block Error: {0}")]
+    SuperBlock(#[from] SuperBlockError),
 }
 
 impl Dsfs {
     // Loads an existing filesystem from a block file
     pub fn load(file_name: PathBuf, mount_point: PathBuf) -> Result<Self, DsfsError> {
         // Read superblock information
-        let block_file = File::open(file_name)?;
+        let block_file = OpenOptions::new().read(true).write(true).open(file_name)?;
 
-        let SuperBlock {
-            block_size,
-            num_blocks,
-        } = SuperBlock::new(&block_file)?;
+        let super_block = SuperBlock::read(&block_file)?;
 
-        let blocks_in_group = block_size;
+        let blocks_in_group = super_block.block_size;
 
         // Number of groups is ceil(num_blocks/blocks_in_group)
-        let num_groups = num_blocks.div_ceil(blocks_in_group);
+        let num_groups = super_block.num_blocks.div_ceil(blocks_in_group);
         let mut dsfs = Dsfs {
             block_file,
             mount_point,
-            block_size,
-            num_blocks,
+            super_block,
             blocks_in_group,
-            block_table: vec![],
+            block_tables: vec![],
         };
-        // For all groups, load a free table
+        // For all groups, load a block table
         for group_index in 0..num_groups {
-            dsfs.block_table
+            dsfs.block_tables
                 .push(BlockTable::from_fs(&dsfs, group_index)?)
         }
         Ok(dsfs)
     }
 
-    fn create(
+    pub fn create_and_write(
         file_name: PathBuf,
         mount_point: PathBuf,
         block_size: u32,
     ) -> Result<Self, DsfsError> {
-        // Read superblock information
-        let block_file = File::open(file_name)?;
+        let block_file = OpenOptions::new().read(true).write(true).open(file_name)?;
 
-        let mut blocks_in_group_buf = [0 as u8; 4];
-        let _ = block_file.read_exact_at(&mut blocks_in_group_buf, 8)?;
-        let blocks_in_group = u32::from_be_bytes(blocks_in_group_buf);
+        let blocks_in_group = block_size; // These are always equal
+        let super_block = SuperBlock::new(block_size, 3u32); // 3 because there are always 3 blocks
+                                                             // when dsfs is first created: super block, first block table, and root dir inode
+        let _ = super_block.write(&block_file);
 
-        let SuperBlock {
-            block_size,
-            num_blocks,
-        } = SuperBlock::new(&block_file)?;
-
-        // Number of groups is ceil(num_blocks/blocks_in_group)
-        let num_groups = num_blocks.div_ceil(blocks_in_group);
         let mut dsfs = Dsfs {
             block_file,
             mount_point,
-            block_size,
-            num_blocks,
+            super_block,
             blocks_in_group,
-            block_table: vec![],
+            block_tables: vec![],
         };
-        // For all groups, load a free table
-        for group_index in 0..num_groups {
-            dsfs.block_table
-                .push(BlockTable::from_fs(&dsfs, group_index)?)
-        }
+        dsfs.block_tables
+            .push(BlockTable::create_and_write(&dsfs, 0)?);
         Ok(dsfs)
     }
 }
+
+impl Filesystem for Dsfs {}
