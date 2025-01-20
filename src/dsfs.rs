@@ -8,6 +8,7 @@ use thiserror::Error;
 
 use crate::fs_structs::{
     block_table::{BlockTable, BlockTableError},
+    generic::FsStruct,
     super_block::{SuperBlock, SuperBlockError},
 };
 
@@ -31,13 +32,16 @@ pub enum DsfsError {
     SuperBlock(#[from] SuperBlockError),
 }
 
+impl Filesystem for Dsfs {}
+
 impl Dsfs {
     // Loads an existing filesystem from a block file
     pub fn load(file_name: PathBuf, mount_point: PathBuf) -> Result<Self, DsfsError> {
         // Read superblock information
         let block_file = OpenOptions::new().read(true).write(true).open(file_name)?;
 
-        let super_block = SuperBlock::read(&block_file)?;
+        let mut super_block = SuperBlock::empty();
+        super_block.read(&block_file, 0)?;
 
         let blocks_in_group = super_block.block_size;
 
@@ -68,7 +72,7 @@ impl Dsfs {
         let blocks_in_group = block_size; // These are always equal
         let super_block = SuperBlock::new(block_size, 3u32); // 3 because there are always 3 blocks
                                                              // when dsfs is first created: super block, first block table, and root dir inode
-        let _ = super_block.write(&block_file);
+        super_block.write(&block_file, 0);
 
         let mut dsfs = Dsfs {
             block_file,
@@ -82,5 +86,3 @@ impl Dsfs {
         Ok(dsfs)
     }
 }
-
-impl Filesystem for Dsfs {}

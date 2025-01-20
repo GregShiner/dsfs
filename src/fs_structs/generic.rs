@@ -1,8 +1,3 @@
-// This module contains structures exactly how they are stored on the disk
-pub mod block_table;
-pub mod inode;
-pub mod super_block;
-
 use std::os::unix::fs::FileExt;
 
 pub trait FsStruct<E: std::error::Error + From<std::io::Error>> {
